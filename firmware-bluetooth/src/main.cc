@@ -70,16 +70,8 @@ static struct bt_uuid_128 uart_tx_uuid = BT_UUID_INIT_128(
     0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
     0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E);
 
- static struct bt_gatt_attr attrs[] = {
-    BT_GATT_PRIMARY_SERVICE(&uart_service_uuid),
-    BT_GATT_CHARACTERISTIC(&uart_rx_uuid.uuid, BT_GATT_CHRC_WRITE_WITHOUT_RESP,
-                           BT_GATT_PERM_WRITE, NULL, write_cb, NULL),
-    BT_GATT_CHARACTERISTIC(&uart_tx_uuid.uuid, BT_GATT_CHRC_NOTIFY,
-                           BT_GATT_PERM_NONE, NULL, NULL, NULL),
-};
-
-static struct bt_gatt_service uart_svc = BT_GATT_SERVICE(attrs);
-   
+static ssize_t write_cb(struct bt_conn* conn, const struct bt_gatt_attr* attr,
+                        const void* buf, uint16_t len, uint16_t offset, uint8_t flags);   
 
 struct report_type {
     uint8_t conn_idx;
@@ -191,6 +183,32 @@ static void set_led_mode(LedMode led_mode_) {
         k_work_reschedule(&led_work, K_NO_WAIT);
     }
 }
+
+// Add this new function before the GATT attribute definition
+static ssize_t write_cb(struct bt_conn* conn, const struct bt_gatt_attr* attr,
+                        const void* buf, uint16_t len, uint16_t offset, uint8_t flags) {
+    LOG_INF("Received data, len %d", len);
+    
+    // Process the received gamepad data and send it to USB HID
+    if (len == sizeof(hid_gamepad_report_t)) {
+        const hid_gamepad_report_t* gp = (const hid_gamepad_report_t*)buf;
+        if (hid_dev0) {
+            CHK(hid_int_ep_write(hid_dev0, (const uint8_t*)gp, sizeof(hid_gamepad_report_t), NULL));
+        }
+    }
+
+    return len;
+}
+
+static struct bt_gatt_attr attrs[] = {
+    BT_GATT_PRIMARY_SERVICE(&uart_service_uuid),
+    BT_GATT_CHARACTERISTIC(&uart_rx_uuid.uuid, BT_GATT_CHRC_WRITE_WITHOUT_RESP,
+                           BT_GATT_PERM_WRITE, NULL, write_cb, NULL),
+    BT_GATT_CHARACTERISTIC(&uart_tx_uuid.uuid, BT_GATT_CHRC_NOTIFY,
+                           BT_GATT_PERM_NONE, NULL, NULL, NULL),
+};
+
+static struct bt_gatt_service uart_svc = BT_GATT_SERVICE(attrs);
 
 static void scan_start() {
     if (CHK(bt_scan_start(BT_SCAN_TYPE_SCAN_PASSIVE))) {
