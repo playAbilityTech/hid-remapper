@@ -30,6 +30,9 @@
 LOG_MODULE_REGISTER(remapper, LOG_LEVEL_DBG);
 
 #define CHK(X) ({ int err = X; if (err != 0) { LOG_ERR("%s returned %d (%s:%d)", #X, err, __FILE__, __LINE__); } err == 0; })
+#define DEVICE_NAME CONFIG_BT_DEVICE_NAME
+#define DEVICE_NAME_LEN (sizeof(DEVICE_NAME) - 1)
+
 
 static const int SCAN_DELAY_MS = 1000;
 static const int CLEAR_BONDS_BUTTON_PRESS_MS = 3000;
@@ -809,14 +812,34 @@ static void bt_init() {
 
     CHK(bt_enable(NULL));
     
-    // Add these lines
     CHK(bt_gatt_service_register(&uart_svc));
 
+    // Set the device name
+    CHK(bt_set_name(DEVICE_NAME));
+
+    // Prepare advertising data
+    struct bt_data ad[] = {
+        BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+        BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
+        BT_DATA_BYTES(BT_DATA_UUID128_ALL, 
+            0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+            0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E),
+    };
+
+    // Prepare scan response data
+    struct bt_data sd[] = {
+        BT_DATA(BT_DATA_NAME_COMPLETE, DEVICE_NAME, DEVICE_NAME_LEN),
+    };
+
+    // Set up advertising parameters
     struct bt_le_adv_param adv_param = BT_LE_ADV_PARAM_INIT(
         BT_LE_ADV_OPT_CONNECTABLE | BT_LE_ADV_OPT_USE_NAME,
-        BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, NULL);
+        BT_GAP_ADV_FAST_INT_MIN_2, 
+        BT_GAP_ADV_FAST_INT_MAX_2, 
+        NULL);
 
-    CHK(bt_le_adv_start(&adv_param, NULL, 0, NULL, 0));
+    // Start advertising
+    CHK(bt_le_adv_start(&adv_param, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd)));
     LOG_INF("Advertising started");
 }
 
