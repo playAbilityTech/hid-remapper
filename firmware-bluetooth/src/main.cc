@@ -34,6 +34,15 @@ LOG_MODULE_REGISTER(remapper, LOG_LEVEL_DBG);
 static const int SCAN_DELAY_MS = 1000;
 static const int CLEAR_BONDS_BUTTON_PRESS_MS = 3000;
 
+typedef struct {
+    uint16_t buttons;
+    uint8_t hat;
+    int8_t x;
+    int8_t y;
+    int8_t z;
+    int8_t rz;
+} hid_gamepad_report_t;
+
 // these macros don't work in C++ when used directly ("taking address of temporary array")
 static auto const BT_UUID_HIDS_ = (struct bt_uuid_16) BT_UUID_INIT_16(BT_UUID_HIDS_VAL);
 static auto BT_ADDR_LE_ANY_ = BT_ADDR_LE_ANY[0];
@@ -48,6 +57,29 @@ static struct k_mutex mutexes[(uint8_t) MutexId::N];
 
 static const struct device* hid_dev0;
 static const struct device* hid_dev1;  // config interface
+
+static struct bt_uuid_128 uart_service_uuid = BT_UUID_INIT_128(
+    0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+    0x93, 0xF3, 0xA3, 0xB5, 0x01, 0x00, 0x40, 0x6E);
+
+static struct bt_uuid_128 uart_rx_uuid = BT_UUID_INIT_128(
+    0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+    0x93, 0xF3, 0xA3, 0xB5, 0x02, 0x00, 0x40, 0x6E);
+
+static struct bt_uuid_128 uart_tx_uuid = BT_UUID_INIT_128(
+    0x9E, 0xCA, 0xDC, 0x24, 0x0E, 0xE5, 0xA9, 0xE0,
+    0x93, 0xF3, 0xA3, 0xB5, 0x03, 0x00, 0x40, 0x6E);
+
+ static struct bt_gatt_attr attrs[] = {
+    BT_GATT_PRIMARY_SERVICE(&uart_service_uuid),
+    BT_GATT_CHARACTERISTIC(&uart_rx_uuid.uuid, BT_GATT_CHRC_WRITE_WITHOUT_RESP,
+                           BT_GATT_PERM_WRITE, NULL, write_cb, NULL),
+    BT_GATT_CHARACTERISTIC(&uart_tx_uuid.uuid, BT_GATT_CHRC_NOTIFY,
+                           BT_GATT_PERM_NONE, NULL, NULL, NULL),
+};
+
+static struct bt_gatt_service uart_svc = BT_GATT_SERVICE(attrs);
+   
 
 struct report_type {
     uint8_t conn_idx;
@@ -758,6 +790,16 @@ static void bt_init() {
     }
 
     CHK(bt_enable(NULL));
+    
+    // Add these lines
+    CHK(bt_gatt_service_register(&uart_svc));
+
+    struct bt_le_adv_param adv_param = BT_LE_ADV_PARAM_INIT(
+        BT_LE_ADV_OPT_CONNECTABLE | BT_LE_ADV_OPT_USE_NAME,
+        BT_GAP_ADV_FAST_INT_MIN_2, BT_GAP_ADV_FAST_INT_MAX_2, NULL);
+
+    CHK(bt_le_adv_start(&adv_param, NULL, 0, NULL, 0));
+    LOG_INF("Advertising started");
 }
 
 static int remapper_settings_set(const char* name, size_t len, settings_read_cb read_cb, void* cb_arg) {
